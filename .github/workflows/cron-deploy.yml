@@ -1,0 +1,41 @@
+name: Scheduled Deploy to Cloudflare Pages
+
+on:
+  schedule:
+    # 毎日 20:00 UTC (JST 05:00) に実行
+    - cron: '0 20 * * *'
+  workflow_dispatch: # 手動実行用
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main # 明示的に main ブランチを対象にする
+          fetch-depth: 0 # 過去のコミット履歴を取得するために必要
+
+      - name: Check for new commits
+        id: check_commits
+        run: |
+          # 過去24時間以内のコミットを取得
+          COMMITS=$(git log --since="24 hours ago" --oneline)
+          if [ -n "$COMMITS" ]; then
+            echo "has_new_commits=true" >> "$GITHUB_OUTPUT"
+            echo "New commits found:"
+            echo "$COMMITS"
+          else
+            echo "has_new_commits=false" >> "$GITHUB_OUTPUT"
+            echo "No new commits in the last 24 hours."
+          fi
+
+      - name: Trigger Cloudflare Pages Deploy Hook
+        if: steps.check_commits.outputs.has_new_commits == 'true'
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_PAGES_DEPLOY_HOOK }}" ]; then
+            echo "Error: CLOUDFLARE_PAGES_DEPLOY_HOOK is not set."
+            exit 1
+          fi
+          echo "Triggering deploy hook..."
+          curl -X POST "${{ secrets.CLOUDFLARE_PAGES_DEPLOY_HOOK }}"
